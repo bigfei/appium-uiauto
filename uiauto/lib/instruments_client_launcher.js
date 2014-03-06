@@ -85,6 +85,64 @@ settings = function () {
   }
 }();
 
+var nodePath = (function() {
+  var path = null;
+  if (typeof settings !== "undefined") {
+    if ('NODE_BIN' in settings) {
+      console.log("Using settings override for NODE_BIN: " + settings.NODE_BIN);
+      return settings.NODE_BIN;
+    }
+  }
+
+  // not in the settings file, so let's try and find it...
+  try {
+    path = sysExec("echo $NODE_BIN");
+    console.log("Found node using $NODE_BIN: " + path);
+  } catch (e) {
+    try {
+      path = sysExec('which node');
+      console.log("Found node using `which node`: " + path);
+    } catch (e) {
+      var appScript = [
+        'try',
+        '  set appiumIsRunning to false',
+        '  tell application "System Events"',
+        '    set appiumIsRunning to name of every process contains "Appium"',
+        '  end tell',
+        '  if appiumIsRunning then',
+        '    tell application "Appium" to return node path',
+        '  end if',
+        'end try',
+        'return "NULL"'
+      ].join("\n");
+      var appNodeWorked = false;
+      try {
+        path = sysExec("osascript -e '" + appScript + "'");
+        appNodeWorked = path !== "NULL";
+      } catch (e) {}
+      if (!appNodeWorked) {
+        try {
+          path = sysExec("ls /usr/local/bin/node");
+          console.log("Found node at " + path);
+        } catch (e) {
+          try {
+            path = sysExec("ls /opt/local/bin/node");
+            console.log("Found node at " + path);
+          } catch (e) {
+            throw new Error("Could not find node using `which node`, at /usr/" +
+              "local/bin/node, at /opt/local/bin/node, at " +
+              "$NODE_BIN, or by querying Appium.app. Where is " +
+              "it?");
+          }
+        }
+      } else {
+        console.log("Found node in Appium.app");
+      }
+    }
+  }
+  return path;
+})();
+
 /* exported isVerbose */
 var isVerbose = (typeof settings !== "undefined" && 'verbose' in settings && settings.verbose === 'true');
 
@@ -107,7 +165,8 @@ console.log('Using instrument client with path: ' + clientPath);
 var sendResultAndGetNext = function (result) {
   curAppiumCmdId++;
   var args = ['-s', '/tmp/instruments_sock'], res
-    , binaryPath = clientPath;
+    , binaryPath = nodePath;
+  args.unshift(clientPath);
   if (typeof result !== "undefined") {
     args = args.concat(['-r', JSON.stringify(result)]);
   }
